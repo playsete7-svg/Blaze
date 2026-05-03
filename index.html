@@ -1,0 +1,2564 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    <title>Painel Preditivo de Horários v4.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Silenciar aviso do Tailwind CDN em produção
+        if (window.tailwind) {
+            tailwind.config = {
+                corePlugins: {
+                    preflight: true,
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --background: 230 25% 7%;
+            --foreground: 40 30% 96%;
+            --card: 230 22% 10%;
+            --card-foreground: 40 30% 96%;
+            --primary: 14 90% 55%;
+            --primary-foreground: 0 0% 100%;
+            --secondary: 230 18% 16%;
+            --secondary-foreground: 40 30% 96%;
+            --muted: 230 18% 14%;
+            --muted-foreground: 230 10% 65%;
+            --accent: 38 95% 58%;
+            --accent-foreground: 230 25% 7%;
+            --destructive: 0 84% 55%;
+            --destructive-foreground: 0 0% 100%;
+            --border: 230 18% 18%;
+            --input: 230 18% 18%;
+            --ring: 14 90% 55%;
+            --radius: 0.85rem;
+            --heat-low: 48 95% 88%;
+            --heat-mid: 28 95% 60%;
+            --heat-high: 8 90% 50%;
+            --heat-extreme: 0 75% 32%;
+            --gradient-hero: linear-gradient(135deg, hsl(14 90% 55%), hsl(38 95% 58%));
+            --gradient-panel: linear-gradient(180deg, hsl(230 22% 11%), hsl(230 25% 8%));
+            --shadow-glow: 0 20px 60px -20px hsl(14 90% 55% / 0.45);
+        }
+
+        * { border-color: hsl(var(--border)); }
+        body { background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
+        .bg-card { background-color: hsl(var(--card)); }
+        .bg-secondary { background-color: hsl(var(--secondary)); }
+        .bg-muted { background-color: hsl(var(--muted)); }
+        .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+        .text-accent { color: hsl(var(--accent)); }
+        .border-border { border-color: hsl(var(--border)); }
+        .gradient-hero { background: var(--gradient-hero); }
+        .gradient-panel { background: var(--gradient-panel); }
+        .shadow-glow { box-shadow: var(--shadow-glow); }
+
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 50; }
+        .toast { background-color: hsl(var(--card)); color: hsl(var(--foreground)); border: 1px solid hsl(var(--border)); border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.5rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); animation: slideIn 0.3s ease-out; }
+        .toast.success { border-left: 4px solid hsl(142 71% 45%); }
+        .toast.error { border-left: 4px solid hsl(0 84% 55%); }
+        .toast.warning { border-left: 4px solid hsl(38 95% 58%); }
+        @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid hsl(var(--border)); border-top-color: hsl(var(--accent)); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Wave Chart Styles - Mobile First */
+        .wave-chart-wrapper {
+            position: relative;
+            width: 100%;
+            height: 250px;
+            background: hsl(var(--secondary) / 0.2);
+            border-radius: 0.5rem;
+            border: 1px solid hsl(var(--border));
+            padding: 20px 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-bottom: 12px;
+            /* Zoom improvements */
+            touch-action: pan-x pan-y;
+            scrollbar-width: thin;
+            scrollbar-color: hsl(var(--accent)) transparent;
+        }
+
+        .wave-chart-wrapper::-webkit-scrollbar { height: 6px; }
+        .wave-chart-wrapper::-webkit-scrollbar-track { background: transparent; }
+        .wave-chart-wrapper::-webkit-scrollbar-thumb { background-color: hsl(var(--accent)); border-radius: 20px; }
+
+        .zoom-controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            justify-content: flex-end;
+        }
+
+        .zoom-controls button {
+            padding: 6px 12px;
+            background-color: hsl(var(--secondary));
+            border: 1px solid hsl(var(--border));
+            border-radius: 6px;
+            color: hsl(var(--foreground));
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .zoom-controls button:hover {
+            background-color: hsl(var(--accent));
+            color: hsl(var(--accent-foreground));
+            border-color: hsl(var(--accent));
+        }
+
+        .zoom-controls button:active { transform: scale(0.95); }
+
+        @media (min-width: 768px) {
+            .wave-chart-wrapper {
+                height: 400px;
+                padding: 30px 20px;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .wave-chart-wrapper {
+                height: 500px;
+                padding: 40px 20px;
+            }
+        }
+
+        .wave-chart-container {
+            position: relative;
+            width: max-content; /* Expande conforme o conteúdo */
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            gap: 1px; /* Distanciamento mínimo entre velas */
+            padding: 10px 0;
+            min-width: 100%; /* Garante preenchimento total */
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-origin: left bottom;
+        }
+
+        .wave-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .grid-line-h {
+            position: absolute;
+            width: 100%;
+            height: 1px;
+            background-color: hsl(var(--border) / 0.15);
+            left: 0;
+        }
+
+        .grid-label {
+            position: absolute;
+            left: -35px;
+            font-size: 0.7rem;
+            color: hsl(var(--muted-foreground));
+            font-weight: 600;
+            transform: translateY(-50%);
+        }
+
+        .candle-group {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+            width: 26px; /* Largura fixa para garantir formato de bloco */
+            height: 100%;
+        }
+
+        @media (min-width: 768px) {
+            .candle-group {
+                width: 32px;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .candle-group {
+                width: 38px;
+            }
+        }
+
+        .candle-block {
+            width: 90%; /* Ocupa quase todo o espaço do grupo */
+            border-radius: 2px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            z-index: 5;
+            min-height: 10px; /* Altura mínima para bloco robusto */
+        }
+
+        .candle-block:hover {
+            filter: brightness(1.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            z-index: 10;
+        }
+
+        .candle-block.up { background-color: #FF3B3B !important; }
+        .candle-block.down { background-color: #111111 !important; border: 1px solid rgba(255,255,255,0.1); }
+        .candle-block.special { 
+            background-color: #FFFFFF !important; 
+            box-shadow: 0 0 14px rgba(255, 255, 255, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+        }
+        .candle-block.neutral { background-color: #666666 !important; }
+
+        .candle-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background-color: hsl(var(--card));
+            color: hsl(var(--foreground));
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            border: 1px solid hsl(var(--border));
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 20;
+            font-weight: 600;
+        }
+
+        .candle-block:hover .candle-tooltip { opacity: 1; }
+
+        .candle-time-label {
+            position: absolute;
+            bottom: -35px;
+            font-size: 0.6rem;
+            color: hsl(var(--muted-foreground));
+            white-space: nowrap;
+            font-family: monospace;
+            font-weight: 600;
+            left: 50%;
+            transform: translateX(-50%) rotate(-45deg); /* Rotacionado para caber mais etiquetas */
+        }
+
+        .trend-line {
+            position: absolute;
+            height: 2px;
+            background-color: hsl(var(--accent) / 0.3);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .chart-info {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 16px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: hsl(var(--muted-foreground));
+        }
+
+        .info-item { display: flex; align-items: center; gap: 6px; }
+        .color-detection-info { background-color: hsl(var(--secondary) / 0.5); border: 1px solid hsl(var(--border)); border-radius: 0.5rem; padding: 12px; margin-top: 12px; font-size: 0.85rem; }
+        .color-detection-info strong { color: hsl(var(--accent)); }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="app"></div>
+
+    <script>
+
+/**
+ * MÓDULO AVANÇADO DE VISUALIZAÇÃO E ANÁLISE DE VELAS (V2 - CORRIGIDA)
+ * Implementa: Zoom Profissional, Multi-Timeframe, Agregação Inteligente e IA de Padrões.
+ */
+
+// 1. ESTRUTURA DE DADOS E ESTADO
+const AdvancedChart = {
+    currentZoomLevel: 2, // Padrão: 1m
+    zoomConfigs: {
+        1: { label: '30s', seconds: 30 },
+        2: { label: '1m', seconds: 60 },
+        3: { label: '5m', seconds: 300 },
+        4: { label: '10m', seconds: 600 },
+        5: { label: '1h', seconds: 3600 }
+    },
+    isInitialized: false
+};
+
+// 2. AGREGAÇÃO INTELIGENTE
+function aggregateCandles(candles, timeframeSeconds) {
+    if (!candles || candles.length === 0) return [];
+    
+    const aggregated = [];
+    let currentGroup = [];
+    let groupStartTime = null;
+
+    const sortedCandles = [...candles].sort((a, b) => {
+        return (a.hour * 3600 + a.minute * 60 + (a.second || 0)) - (b.hour * 3600 + b.minute * 60 + (b.second || 0));
+    });
+
+    sortedCandles.forEach((candle) => {
+        const candleTime = candle.hour * 3600 + candle.minute * 60 + (candle.second || 0);
+        
+        if (groupStartTime === null) {
+            groupStartTime = Math.floor(candleTime / timeframeSeconds) * timeframeSeconds;
+        }
+
+        if (candleTime < groupStartTime + timeframeSeconds) {
+            currentGroup.push(candle);
+        } else {
+            if (currentGroup.length > 0) {
+                aggregated.push(decideCandle(currentGroup, groupStartTime));
+            }
+            groupStartTime = Math.floor(candleTime / timeframeSeconds) * timeframeSeconds;
+            currentGroup = [candle];
+        }
+    });
+
+    if (currentGroup.length > 0) {
+        aggregated.push(decideCandle(currentGroup, groupStartTime));
+    }
+
+    return aggregated;
+}
+
+function decideCandle(group, startTime) {
+    let up = 0, down = 0, special = 0;
+    group.forEach(c => {
+        if (c.color === 'up') up++;
+        else if (c.color === 'down') down++;
+        else if (c.color === 'special') special++;
+    });
+
+    let resultColor = 'neutral';
+    if (special > 0 && up === down) {
+        resultColor = 'special';
+    } else if (up > down) {
+        resultColor = 'up';
+    } else if (down > up) {
+        resultColor = 'down';
+    } else {
+        resultColor = group[group.length - 1].color;
+    }
+
+    const h = Math.floor(startTime / 3600);
+    const m = Math.floor((startTime % 3600) / 60);
+    const s = startTime % 60;
+
+    return {
+        hour: h,
+        minute: m,
+        second: s,
+        time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}${s > 0 ? ':' + String(s).padStart(2, '0') : ''}`,
+        color: resultColor,
+        count: group.length,
+        raw: group
+    };
+}
+
+// 3. SISTEMA DE ZOOM E TIMEFRAME
+function applyAdvancedZoom(level) {
+    if (!AdvancedChart.zoomConfigs[level]) return;
+    AdvancedChart.currentZoomLevel = level;
+    
+    const config = AdvancedChart.zoomConfigs[level];
+    const candles = parseTimes(allTimes); 
+    
+    const aggregated = aggregateCandles(candles, config.seconds);
+    renderTimeframe(aggregated, config.label);
+}
+
+// 4. RENDERIZAÇÃO OTIMIZADA
+function renderTimeframe(aggregatedCandles, label) {
+    const trendData = generateTrendChartData(aggregatedCandles);
+    const result = analyze(aggregatedCandles);
+    
+    const container = document.getElementById('replay-chart-container');
+    if (container) {
+        const wrapper = container.querySelector('.wave-chart-wrapper');
+        const scrollPos = wrapper ? wrapper.scrollLeft : 0;
+        
+        container.innerHTML = renderWaveChart(trendData, result);
+        
+        const title = container.querySelector('h2');
+        if (title) title.innerHTML += ` <span class="text-xs font-normal text-accent">[${label}]</span>`;
+        
+        const newWrapper = container.querySelector('.wave-chart-wrapper');
+        if (newWrapper) newWrapper.scrollLeft = scrollPos;
+        
+        const chartContainer = container.querySelector('.wave-chart-container');
+        if (chartContainer) chartContainer.style.transform = 'scaleX(1)';
+    }
+
+    const analysis = analyzePattern(aggregatedCandles);
+    renderAnalysisOverlay(analysis);
+}
+
+// 5. CAMADA DE IA (SIMULADA)
+function analyzePattern(candles) {
+    if (!candles || candles.length < 5) return null;
+    
+    const lastN = candles.slice(-20);
+    const colors = lastN.map(c => c.color);
+    
+    let upCount = 0, downCount = 0, specialCount = 0;
+    colors.forEach(c => {
+        if (c === 'up') upCount++;
+        else if (c === 'down') downCount++;
+        else if (c === 'special') specialCount++;
+    });
+
+    const total = colors.length;
+    const upPct = (upCount / total) * 100;
+    const downPct = (downCount / total) * 100;
+    
+    let tendencia = "lateral";
+    if (upPct > 55) tendencia = "alta";
+    else if (downPct > 55) tendencia = "baixa";
+
+    let maxSeq = 1, currentSeq = 1;
+    for (let i = 1; i < colors.length; i++) {
+        if (colors[i] === colors[i-1] && colors[i] !== 'neutral') {
+            currentSeq++;
+            maxSeq = Math.max(maxSeq, currentSeq);
+        } else {
+            currentSeq = 1;
+        }
+    }
+
+    let alerta = "Estável";
+    if (maxSeq >= 3) alerta = "Sequência detectada";
+    if (colors[total-1] !== colors[total-2] && total > 2) alerta = "Possível reversão";
+
+    return {
+        tendencia: tendencia,
+        forca: Math.round(Math.max(upPct, downPct)),
+        confianca: Math.round((total / 20) * 100),
+        alerta: alerta
+    };
+}
+
+function renderAnalysisOverlay(analysis) {
+    if (!analysis) return;
+    
+    let overlay = document.getElementById('advanced-analysis-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'advanced-analysis-overlay';
+        overlay.className = 'mt-4 p-4 rounded-xl border bg-secondary/30 backdrop-blur-sm';
+        const container = document.getElementById('replay-chart-container');
+        if (container) container.after(overlay);
+    }
+
+    const colorClass = analysis.tendencia === 'alta' ? 'text-red-500' : (analysis.tendencia === 'baixa' ? 'text-gray-400' : 'text-accent');
+    
+    overlay.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <p class="text-[10px] uppercase text-muted-foreground font-bold">Tendência IA</p>
+                <p class="text-lg font-black ${colorClass} uppercase">${analysis.tendencia} (${analysis.forca}%)</p>
+            </div>
+            <div class="text-right">
+                <p class="text-[10px] uppercase text-muted-foreground font-bold">Status</p>
+                <p class="text-sm font-bold text-foreground">${analysis.alerta}</p>
+            </div>
+            <div class="w-full bg-black/20 h-1 rounded-full overflow-hidden">
+                <div class="bg-accent h-full transition-all duration-500" style="width: ${analysis.confianca}%"></div>
+            </div>
+        </div>
+    `;
+}
+
+// 6. INICIALIZAÇÃO E EVENTOS
+function initAdvancedChart() {
+    if (AdvancedChart.isInitialized) return;
+    
+    // Sobrescrever funções globais de zoom para usar o novo sistema de timeframe
+    window.zoomIn = function() {
+        if (AdvancedChart.currentZoomLevel < 5) {
+            applyAdvancedZoom(AdvancedChart.currentZoomLevel + 1);
+        } else {
+            // Se já estiver no nível máximo de timeframe, aumenta o zoom visual
+            zoomLevel = Math.min(3, zoomLevel + 0.2);
+            applyZoom();
+        }
+    };
+    
+    window.zoomOut = function() {
+        if (zoomLevel > 1) {
+            // Se houver zoom visual, diminui ele primeiro
+            zoomLevel = Math.max(1, zoomLevel - 0.2);
+            applyZoom();
+        } else if (AdvancedChart.currentZoomLevel > 1) {
+            // Se não houver zoom visual, diminui o timeframe
+            applyAdvancedZoom(AdvancedChart.currentZoomLevel - 1);
+        }
+    };
+    
+    window.resetZoom = function() {
+        zoomLevel = 1;
+        applyZoom();
+        applyAdvancedZoom(2); // Volta para 1m
+    };
+
+    AdvancedChart.isInitialized = true;
+    console.log("Módulo AdvancedChart V2 inicializado.");
+}
+
+// Hook no updateUI original
+const originalUpdateUI = window.updateUI;
+window.updateUI = function() {
+    if (typeof originalUpdateUI === 'function') originalUpdateUI();
+    if (allTimes && allTimes.length > 0) {
+        applyAdvancedZoom(AdvancedChart.currentZoomLevel);
+    }
+};
+
+// Inicializar ao carregar
+document.addEventListener('DOMContentLoaded', initAdvancedChart);
+
+
+        // ============================================================================
+        // LÓGICA DE ANÁLISE PREDITIVA
+        // ============================================================================
+        const MINUTE_BUCKETS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+        function bucketMinute(min) {
+            if (min === 0) return 5;
+            const b = Math.ceil(min / 5) * 5;
+            return b === 0 ? 5 : Math.min(60, b);
+        }
+
+        function parseTimes(raw) {
+            const out = [];
+            for (const entry of raw) {
+                const parts = entry.trim().split(/[|]/);
+                const timeStr = parts[0].trim();
+                const colorStr = parts[1] ? parts[1].trim().toLowerCase() : null;
+                const m = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])(?::([0-5][0-9]))?$/.exec(timeStr);
+                if (m) {
+                    out.push({ 
+                        hour: parseInt(m[1]), 
+                        minute: parseInt(m[2]), 
+                        second: m[3] ? parseInt(m[3]) : 0,
+                        color: colorStr || 'neutral' 
+                    });
+                }
+            }
+            return out.sort((a, b) => (a.hour * 3600 + a.minute * 60 + (a.second || 0)) - (b.hour * 3600 + b.minute * 60 + (b.second || 0)));
+        }
+
+        function analyze(entries) {
+            const matrix = {};
+            const hourStats = {};
+            const bucketStats = {};
+            const colorStats = { up: 0, down: 0, special: 0, neutral: 0 };
+
+            entries.forEach((e) => {
+                const b = bucketMinute(e.minute);
+                const key = `${e.hour}-${b}`;
+                matrix[key] = (matrix[key] || 0) + 1;
+                hourStats[e.hour] = (hourStats[e.hour] || 0) + 1;
+                bucketStats[b] = (bucketStats[b] || 0) + 1;
+                if (e.color === 'up') colorStats.up++;
+                else if (e.color === 'down') colorStats.down++;
+                else if (e.color === 'special') colorStats.special++;
+                else colorStats.neutral++;
+            });
+
+            const hourRanking = Object.entries(hourStats).map(([h, count]) => ({ hour: parseInt(h), count })).sort((a, b) => b.count - a.count);
+            const bucketRanking = MINUTE_BUCKETS.map((b) => {
+                const count = bucketStats[b] || 0;
+                const weighted = count * (b <= 30 ? 1.2 : 1.0);
+                return { bucket: b, count, weighted };
+            }).sort((a, b) => b.weighted - a.weighted);
+
+            const hotZones = [];
+            let totalWeighted = 0;
+            let maxWeighted = 0;
+            for (let h = 0; h < 24; h++) {
+                MINUTE_BUCKETS.forEach((b) => {
+                    const count = matrix[`${h}-${b}`] || 0;
+                    const weighted = count * (b <= 30 ? 1.5 : 1.0);
+                    totalWeighted += weighted;
+                    if (weighted > 0) {
+                        hotZones.push({ hour: h, bucket: b, weighted });
+                        if (weighted > maxWeighted) maxWeighted = weighted;
+                    }
+                });
+            }
+            hotZones.sort((a, b) => b.weighted - a.weighted);
+            hotZones.forEach((z) => { z.probability = z.weighted / (totalWeighted || 1); });
+
+            const predictions = hotZones.slice(0, 3).map((z) => {
+                const start = String(z.bucket - 5).padStart(2, "0");
+                const end = String(z.bucket).padStart(2, "0");
+                return `${String(z.hour).padStart(2, "0")}:${start} às ${String(z.hour).padStart(2, "0")}:${end}`;
+            });
+
+            const patterns = [];
+            if (entries.length >= 2) {
+                const diffs = [];
+                for (let i = 0; i < entries.length - 1; i++) {
+                    let d = (entries[i+1].hour * 60 + entries[i+1].minute) - (entries[i].hour * 60 + entries[i].minute);
+                    if (d < 0) d += 24 * 60;
+                    diffs.push(d);
+                }
+                const avg = diffs.reduce((s, x) => s + x, 0) / (diffs.length || 1);
+                patterns.push(`Intervalo médio: ~${avg.toFixed(1)} min`);
+            }
+
+            return { totalEntries: entries.length, matrix, maxWeighted, hourRanking, bucketRanking, hotZones, predictions, confidence: Math.round(Math.min(100, (entries.length / 30) * 100)), patterns, colorStats };
+        }
+
+        // ============================================================================
+        // 🎬 MODO REPLAY - REPRODUÇÃO PROGRESSIVA DAS VELAS
+        // ============================================================================
+        let replayInterval = null;
+        let isReplaying = false;
+
+        function renderReplay(chartData, result) {
+            if (chartData.length === 0) {
+                return `<div class="rounded-2xl border p-5 bg-card shadow-glow"><h2 class="text-xl font-bold">📊 Gráfico de Tendência</h2><p class="text-sm text-muted-foreground">Sem dados</p></div>`;
+            }
+
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold tracking-tight">📈 Gráfico de Tendência Acumulada</h2>
+                            <p class="text-sm text-muted-foreground">Vermelho: Sobe | Preto: Desce | Branco: Especial</p>
+                        </div>
+                        <div class="zoom-controls">
+                            <button onclick="zoomOut()" title="Diminuir Zoom">−</button>
+                            <button onclick="resetZoom()" title="Resetar">⟲</button>
+                            <button onclick="zoomIn()" title="Aumentar Zoom">+</button>
+                        </div>
+                    </div>
+                    <div class="wave-chart-wrapper">
+                        ${generateHeatmapOverlay(result)}
+                        <div class="wave-grid">
+                            ${[0, 25, 50, 75, 100].map(p => `<div class="grid-line-h" style="top: ${p}%;"><div class="grid-label" style="top: ${p}%;">${100-p}%</div></div>`).join('')}
+                        </div>
+                        <div class="wave-chart-container" style="transform: scaleX(${zoomLevel});">
+                            ${chartData.map((candle, idx) => `
+                                <div class="candle-group">
+                                    <div class="candle-block ${candle.type}" style="bottom: ${candle.bottom}%; height: ${candle.height}%;">
+                                        <div class="candle-tooltip">${candle.time || candle.hour + ':' + candle.minute}<br>${candle.type.toUpperCase()}</div>
+                                    </div>
+                                    <div class="candle-time-label">${candle.time || candle.hour + ':' + candle.minute}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="chart-info">
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#FF3B3B]"></span><span>Alta (Vermelho)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#111111] border border-white/20"></span><span>Baixa (Preto)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-white shadow-[0_0_5px_white]"></span><span>Especial (Branco)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#666666]"></span><span>Neutro</span></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function startReplay() {
+            if (isReplaying) {
+                clearInterval(replayInterval);
+                isReplaying = false;
+                updateUI();
+                const replayBtn = document.getElementById('replay-btn');
+                if (replayBtn) replayBtn.innerHTML = '▶ Replay';
+                return;
+            }
+
+            const entries = parseTimes(allTimes);
+            if (entries.length === 0) {
+                showToast('Nenhum dado para reproduzir', 'warning');
+                return;
+            }
+
+            isReplaying = true;
+            let i = 0;
+            const replayBtn = document.getElementById('replay-btn');
+            if (replayBtn) replayBtn.innerHTML = '⏸ Parando...';
+
+            replayInterval = setInterval(() => {
+                if (i > entries.length) {
+                    clearInterval(replayInterval);
+                    isReplaying = false;
+                    if (replayBtn) replayBtn.innerHTML = '▶ Replay';
+                    updateUI();
+                    return;
+                }
+
+                const slice = entries.slice(0, i);
+                const chartData = generateTrendChartData(slice);
+                const chartContainer = document.getElementById('replay-chart-container');
+                if (chartContainer) {
+                    const sliceResult = analyze(slice);
+                    chartContainer.innerHTML = renderReplay(chartData, sliceResult);
+                }
+                i++;
+            }, 300);
+        }
+
+        // ============================================================================
+        // 🧠 SCORE DE TENDÊNCIA - INDICADOR INTELIGENTE
+        // ============================================================================
+        function getTrendScore(result) {
+            const { up = 0, down = 0 } = result.colorStats || {};
+            const total = up + down;
+
+            if (total === 0) return { label: '⚪ NEUTRO', color: '#666666', description: 'Sem dados suficientes' };
+
+            if (up > down * 1.5) {
+                return { label: '🔴 FORTE ALTA', color: '#FF3B3B', description: `Altas: ${up} | Baixas: ${down}` };
+            } else if (down > up * 1.5) {
+                return { label: '⚫ FORTE BAIXA', color: '#111111', description: `Altas: ${up} | Baixas: ${down}` };
+            } else {
+                return { label: '⚪ NEUTRO', color: '#666666', description: `Altas: ${up} | Baixas: ${down}` };
+            }
+        }
+
+        function renderTrendScore(result) {
+            const score = getTrendScore(result);
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold" style="color: ${score.color};">${score.label}</h3>
+                            <p class="text-sm text-muted-foreground mt-1">${score.description}</p>
+                        </div>
+                        <div class="text-4xl" style="color: ${score.color};">📊</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================================================
+        // 🔥 HEATMAP VISUAL - ZONAS QUENTES
+        // ============================================================================
+        function generateHeatmapOverlay(result) {
+            if (!result.hotZones || result.hotZones.length === 0) {
+                return '';
+            }
+
+            const topZones = result.hotZones.slice(0, 5);
+            const maxProbability = Math.max(...topZones.map(z => z.probability));
+
+            const heatmapHTML = topZones.map((zone, idx) => {
+                const opacity = Math.min(0.4, (zone.probability / maxProbability) * 0.4);
+                const hue = 0 + (idx * 15);
+                const color = `hsla(${hue}, 100%, 50%, ${opacity})`;
+                const positionPercent = ((zone.hour * 60 + zone.bucket) / (24 * 60)) * 100;
+
+                return `
+                    <div class="heatmap-zone" style="
+                        position: absolute;
+                        left: ${positionPercent}%;
+                        top: 0;
+                        width: 8%;
+                        height: 100%;
+                        background: linear-gradient(90deg, transparent, ${color}, transparent);
+                        pointer-events: none;
+                        z-index: 1;
+                        border-radius: 4px;
+                    " title="${zone.hour}:${String(zone.bucket).padStart(2, '0')} - Prob: ${(zone.probability * 100).toFixed(1)}%"></div>
+                `;
+            }).join('');
+
+            return `<div class="heatmap-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3;">${heatmapHTML}</div>`;
+        }
+
+        // ============================================================================
+        // ⏱ LINHA DO TEMPO - PROGRESSO DO SISTEMA
+        // ============================================================================
+        function renderTimeline(result) {
+            const step1Active = allTimes.length > 0;
+            const step2Active = result.totalEntries > 0;
+            const step3Active = result.predictions.length > 0;
+
+            const getStepStyle = (isActive) => {
+                return isActive 
+                    ? 'bg-accent text-accent-foreground' 
+                    : 'bg-muted text-muted-foreground';
+            };
+
+            const getLineStyle = (isActive) => {
+                return isActive 
+                    ? 'bg-accent' 
+                    : 'bg-muted';
+            };
+
+            return `
+                <div class="rounded-2xl border p-6 bg-card shadow-glow mb-6">
+                    <h3 class="text-lg font-bold mb-6">Progresso do Sistema</h3>
+                    <div class="flex items-center justify-between relative">
+                        <!-- Step 1: Dados -->
+                        <div class="flex flex-col items-center z-10 flex-1">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm ${getStepStyle(step1Active)} transition-all">
+                                📄
+                            </div>
+                            <p class="text-xs mt-2 text-center text-muted-foreground">Dados</p>
+                            <p class="text-xs text-accent font-bold">${allTimes.length}</p>
+                        </div>
+
+                        <!-- Linha conectora 1 -->
+                        <div class="flex-1 h-1 mx-2 ${getLineStyle(step1Active)} transition-all"></div>
+
+                        <!-- Step 2: Análise -->
+                        <div class="flex flex-col items-center z-10 flex-1">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm ${getStepStyle(step2Active)} transition-all">
+                                📋
+                            </div>
+                            <p class="text-xs mt-2 text-center text-muted-foreground">Análise</p>
+                            <p class="text-xs text-accent font-bold">${result.totalEntries}</p>
+                        </div>
+
+                        <!-- Linha conectora 2 -->
+                        <div class="flex-1 h-1 mx-2 ${getLineStyle(step2Active)} transition-all"></div>
+
+                        <!-- Step 3: Previsão -->
+                        <div class="flex flex-col items-center z-10 flex-1">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm ${getStepStyle(step3Active)} transition-all">
+                                🔮
+                            </div>
+                            <p class="text-xs mt-2 text-center text-muted-foreground">Previsão</p>
+                            <p class="text-xs text-accent font-bold">${result.predictions.length}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+                // ============================================================================
+        // 🔍 DETECTOR DE PADRÕES - ANÁLISE DE SEQUÊNCIAS
+        // ============================================================================
+        function detectPatterns(entries) {
+            if (entries.length < 3) {
+                return { pattern: 'Sem padrão claro', description: 'Dados insuficientes para análise' };
+            }
+
+            const last3 = entries.slice(-3).map(e => e.color);
+            const last4 = entries.slice(-4).map(e => e.color);
+
+            // Verificar padrões de 3 elementos
+            const pattern3 = last3.join('-');
+
+            // Padrões conhecidos
+            if (pattern3 === 'down-down-up') {
+                return { pattern: '📈 Reversão após queda', description: 'Possível mudança de tendência de baixa para alta' };
+            }
+            if (pattern3 === 'up-up-down') {
+                return { pattern: '📉 Possível topo', description: 'Após duas altas consecutivas, uma queda pode indicar reversão' };
+            }
+            if (pattern3 === 'up-up-up') {
+                return { pattern: '🚀 Tendência forte de alta', description: 'Três altas consecutivas indicam momentum positivo' };
+            }
+            if (pattern3 === 'down-down-down') {
+                return { pattern: '💥 Tendência forte de baixa', description: 'Três baixas consecutivas indicam momentum negativo' };
+            }
+            if (pattern3 === 'up-down-up') {
+                return { pattern: '⚡ Volatilidade', description: 'Oscilação entre altas e baixas, sem direção clara' };
+            }
+            if (pattern3 === 'down-up-down') {
+                return { pattern: '⚡ Volatilidade', description: 'Oscilação entre baixas e altas, sem direção clara' };
+            }
+
+            // Padrões de 4 elementos
+            if (last4.length === 4) {
+                const pattern4 = last4.join('-');
+                if (pattern4 === 'down-down-up-up') {
+                    return { pattern: '📈 V-Reversal', description: 'Formação em V: queda seguida de recuperação' };
+                }
+                if (pattern4 === 'up-up-down-down') {
+                    return { pattern: '📉 Topo duplo', description: 'Formação de topo: altas seguidas de quedas' };
+                }
+            }
+
+            return { pattern: '➖ Padrão misto', description: 'Sequência sem padrão definido' };
+        }
+
+        function renderPatternDetector(entries) {
+            const patternData = detectPatterns(entries);
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow mt-6">
+                    <h3 class="text-lg font-bold mb-2">${patternData.pattern}</h3>
+                    <p class="text-sm text-muted-foreground">${patternData.description}</p>
+                </div>
+            `;
+        }
+
+        // ============================================================================
+        // 🎨 OVERLAY VISUAL DE DETECÇÃO OCR
+        // ============================================================================
+        function drawDetectionOverlay(imageData, words) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    canvas.style.position = 'absolute';
+                    canvas.style.top = '0';
+                    canvas.style.left = '0';
+                    canvas.style.cursor = 'pointer';
+                    canvas.style.borderRadius = '0.5rem';
+
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Desenhar a imagem de fundo com opacidade reduzida
+                    ctx.globalAlpha = 0.3;
+                    ctx.drawImage(img, 0, 0);
+                    ctx.globalAlpha = 1.0;
+
+                    // Desenhar retângulos para cada palavra detectada
+                    words.forEach(word => {
+                        const { x0, y0, x1, y1 } = word.bbox;
+                        const width = x1 - x0;
+                        const height = y1 - y0;
+
+                        // Cores baseadas no tipo (se disponível)
+                        const timeMatch = /([0-1]?[0-9]|2[0-3]):([0-5][0-9])/.test(word.text);
+                        
+                        if (timeMatch) {
+                            ctx.strokeStyle = '#FF3B3B';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(x0, y0, width, height);
+                            
+                            // Preencher com cor semi-transparente
+                            ctx.fillStyle = 'rgba(255, 59, 59, 0.1)';
+                            ctx.fillRect(x0, y0, width, height);
+
+                            // Adicionar rótulo
+                            ctx.fillStyle = '#FF3B3B';
+                            ctx.font = 'bold 12px Arial';
+                            ctx.fillText(word.text, x0 + 2, y0 - 5);
+                        }
+                    });
+
+                    resolve(canvas);
+                };
+                img.src = imageData;
+            });
+        }
+
+        function applyOCROverlay(imageData, words) {
+            drawDetectionOverlay(imageData, words).then(canvas => {
+                const previewContainer = document.getElementById('preview-container');
+                if (previewContainer) {
+                    previewContainer.style.position = 'relative';
+                    previewContainer.style.display = 'inline-block';
+                    
+                    // Limpar conteúdo anterior
+                    previewContainer.innerHTML = '';
+                    
+                    // Adicionar imagem original
+                    const img = document.createElement('img');
+                    img.src = imageData;
+                    img.style.maxHeight = '200px';
+                    img.style.borderRadius = '0.5rem';
+                    img.style.border = '1px solid hsl(var(--border))';
+                    img.style.display = 'block';
+                    
+                    previewContainer.appendChild(img);
+                    previewContainer.appendChild(canvas);
+                    
+                    // Ajustar tamanho do canvas para corresponder à imagem
+                    canvas.style.maxHeight = '200px';
+                    canvas.style.width = 'auto';
+                }
+            });
+        }
+
+                // ============================================================================
+        // DETECÇÃO DE CORES
+        // ============================================================================
+        function getDominantColor(ctx, x, y, width, height) {
+            const imageData = ctx.getImageData(x, y, width, height);
+            const data = imageData.data;
+            const colorMap = { white: 0, red: 0, black: 0 };
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+                if (a < 128) continue;
+                if (r > 200 && g > 200 && b > 200) colorMap.white++;
+                else if (r > 150 && g < 100 && b < 100) colorMap.red++;
+                else if (r < 50 && g < 50 && b < 50) colorMap.black++;
+            }
+            if (colorMap.white > colorMap.red && colorMap.white > colorMap.black && colorMap.white > 50) return 'special';
+            if (colorMap.red > colorMap.black && colorMap.red > 50) return 'up';
+            if (colorMap.black > 50) return 'down';
+            return 'neutral';
+        }
+
+        async function processImageGrid(imageData) {
+            return new Promise(async (resolve) => {
+                const img = new Image();
+                img.onerror = () => {
+                    console.error("Erro ao carregar imagem para OCR");
+                    showToast("Erro ao carregar imagem.", "error");
+                    resolve([]);
+                };
+                img.onload = async () => {
+                    let worker = null;
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width; canvas.height = img.height;
+                        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+                        
+                        console.log("Iniciando Tesseract...");
+                        const { data: { words } } = await Tesseract.recognize(img, 'por', {
+                            logger: m => console.log(m)
+                        });
+                        console.log(`OCR concluído. Palavras encontradas: ${words.length}`);
+                        
+                        const results = [];
+                        words.forEach(word => {
+                            const m = /([0-1]?[0-9]|2[0-3]):([0-5][0-9])/.exec(word.text);
+                            if (m) {
+                                const { x0, y0, x1, y1 } = word.bbox;
+                                const color = getDominantColor(ctx, x0, Math.max(0, y0 - (y1-y0)*3 - 5), x1-x0, (y1-y0)*3);
+                                results.push(`${m[1]}:${m[2]}${color !== 'neutral' ? '|' + color : ''}`);
+                            }
+                        });
+                        resolve(results);
+                    } catch (err) {
+                        console.error("Erro no processamento de imagem:", err);
+                        showToast("Erro no OCR: " + err.message, "error");
+                        resolve([]);
+                    } finally {
+                        // Tesseract.recognize gerencia o worker internamente se usado de forma simples
+                    }
+                };
+                img.src = imageData;
+            });
+        }
+
+        // ============================================================================
+        // MÓDULO DE GRÁFICO DE TENDÊNCIA ACUMULADA (ESCADA)
+        // ============================================================================
+        function generateTrendChartData(entries) {
+            if (entries.length === 0) return [];
+            
+            const data = [];
+            let currentLevel = 50; 
+            const stepSize = 8;    
+
+            entries.forEach((entry, idx) => {
+                let startLevel = currentLevel;
+                let endLevel = currentLevel;
+                let height = stepSize;
+                
+                const prevEntry = idx > 0 ? entries[idx - 1] : null;
+
+                if (entry.color === 'up') {
+                    // Lógica de Degrau: Se a anterior for preta (down) e esta vermelha (up), 
+                    // esta vermelha nasce um degrau ACIMA da base da preta.
+                    if (prevEntry && prevEntry.color === 'down') {
+                        // A vela anterior terminou em currentLevel. Sua base era currentLevel + stepSize.
+                        // Para nascer um degrau acima da anterior (que era baixa), 
+                        // definimos o início um nível acima do ponto onde a anterior terminou.
+                        startLevel = currentLevel + stepSize; 
+                    } else {
+                        startLevel = currentLevel;
+                    }
+                    endLevel = startLevel + stepSize;
+                    currentLevel = endLevel;
+                } else if (entry.color === 'down') {
+                    // Lógica Inversa: Se a anterior for vermelha (up) e esta preta (down),
+                    // esta preta nasce um degrau ABAIXO do topo da vermelha.
+                    if (prevEntry && prevEntry.color === 'up') {
+                        endLevel = currentLevel - stepSize;
+                    } else {
+                        endLevel = currentLevel;
+                    }
+                    startLevel = endLevel - stepSize;
+                    currentLevel = startLevel;
+                } else if (entry.color === 'special') {
+                    startLevel = currentLevel;
+                    endLevel = currentLevel + (stepSize * 1.5);
+                    height = stepSize * 1.5;
+                    currentLevel = endLevel;
+                } else {
+                    startLevel = currentLevel - (stepSize/2);
+                    endLevel = currentLevel + (stepSize/2);
+                }
+
+                data.push({
+                    time: `${String(entry.hour).padStart(2, "0")}:${String(entry.minute).padStart(2, "0")}`,
+                    type: entry.color,
+                    bottom: startLevel,
+                    height: height,
+                    endLevel: endLevel
+                });
+            });
+
+            const allPoints = data.flatMap(d => [d.bottom, d.bottom + d.height]);
+            const minP = Math.min(...allPoints);
+            const maxP = Math.max(...allPoints);
+            const range = maxP - minP || 1;
+
+            return data.map(d => ({
+                ...d,
+                bottom: ((d.bottom - minP) / range) * 80 + 10,
+                height: (d.height / range) * 80
+            }));
+        }
+
+        // Zoom Logic
+        let zoomLevel = 1;
+        function zoomIn() {
+            zoomLevel = Math.min(3, zoomLevel + 0.2);
+            applyZoom();
+        }
+        function zoomOut() {
+            zoomLevel = Math.max(1, zoomLevel - 0.2);
+            applyZoom();
+        }
+        function resetZoom() {
+            zoomLevel = 1;
+            applyZoom();
+        }
+        function applyZoom() {
+            const containers = document.querySelectorAll(".wave-chart-container");
+            containers.forEach(container => {
+                container.style.transform = `scaleX(${zoomLevel})`;
+            });
+            // Also adjust heatmap zones to scale with content
+            const heatmapZones = document.querySelectorAll(".heatmap-zone");
+            heatmapZones.forEach(zone => {
+                // Keep width relative but allow it to be affected by parent transform
+            });
+        }
+
+        // Pinch Zoom Support
+        let initialDistance = null;
+        document.addEventListener("touchmove", function(e) {
+            if (e.touches.length === 2) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const distance = Math.sqrt(dx*dx + dy*dy);
+
+                if (!initialDistance) {
+                    initialDistance = distance;
+                } else {
+                    if (Math.abs(distance - initialDistance) > 10) {
+                        if (distance > initialDistance) zoomIn();
+                        else zoomOut();
+                        initialDistance = distance;
+                    }
+                }
+            }
+        }, { passive: true });
+
+        document.addEventListener("touchend", function() {
+            initialDistance = null;
+        });
+
+        function renderWaveChart(chartData, result) {
+            if (chartData.length === 0) {
+                return `<div class="rounded-2xl border p-5 bg-card shadow-glow"><h2 class="text-xl font-bold">📊 Gráfico de Tendência</h2><p class="text-sm text-muted-foreground">Sem dados</p></div>`;
+            }
+
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold tracking-tight">📈 Gráfico de Tendência Acumulada</h2>
+                            <p class="text-sm text-muted-foreground">Vermelho: Sobe | Preto: Desce | Branco: Especial</p>
+                        </div>
+                        <div class="zoom-controls">
+                            <button onclick="zoomOut()" title="Diminuir Zoom">−</button>
+                            <button onclick="resetZoom()" title="Resetar">⟲</button>
+                            <button onclick="zoomIn()" title="Aumentar Zoom">+</button>
+                        </div>
+                    </div>
+                    <div class="wave-chart-wrapper">
+                        ${generateHeatmapOverlay(result)}
+                        <div class="wave-grid">
+                            ${[0, 25, 50, 75, 100].map(p => `<div class="grid-line-h" style="top: ${p}%;"><div class="grid-label" style="top: ${p}%;">${100-p}%</div></div>`).join('')}
+                        </div>
+                        <div class="wave-chart-container" style="transform: scaleX(${zoomLevel});">
+                            ${chartData.map((candle, idx) => `
+                                <div class="candle-group">
+                                    <div class="candle-block ${candle.type}" style="bottom: ${candle.bottom}%; height: ${candle.height}%;">
+                                        <div class="candle-tooltip">${candle.time || candle.hour + ':' + candle.minute}<br>${candle.type.toUpperCase()}</div>
+                                    </div>
+                                    <div class="candle-time-label">${candle.time || candle.hour + ':' + candle.minute}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="chart-info">
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#FF3B3B]"></span><span>Alta (Vermelho)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#111111] border border-white/20"></span><span>Baixa (Preto)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-white shadow-[0_0_5px_white]"></span><span>Especial (Branco)</span></div>
+                        <div class="info-item"><span class="w-3 h-3 rounded-full bg-[#666666]"></span><span>Neutro</span></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================================================
+        // UI E APP
+        // ============================================================================
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`; toast.innerHTML = message;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(400px)'; toast.style.transition = 'all 0.3s ease-in'; setTimeout(() => toast.remove(), 300); }, 4000);
+        }
+
+        function renderApp(allTimes, result) {
+                        const app = document.getElementById('app');
+            const entries = parseTimes(allTimes);
+            const trendData = generateTrendChartData(entries);
+            const statisticalContext = analyzeStatisticalContext(entries);
+            const opportunityResult = analyzeOpportunities(entries, result);
+            
+            // Integrar análise estatística no resultado
+            if (statisticalContext.pressure !== 0) {
+                opportunityResult.strength = Math.min(100, Math.max(0, opportunityResult.strength + (statisticalContext.pressure / 2)));
+            }
+            opportunityResult.confidence = Math.min(100, opportunityResult.confidence + statisticalContext.confidenceBoost);
+            opportunityResult.reasons.push(...statisticalContext.insights.slice(0, 2));
+            if (statisticalContext.anomaly) {
+                opportunityResult.confidence = Math.max(0, opportunityResult.confidence - 10);
+            }
+            
+            // Registrar decisão na IA Adaptativa
+            recordDecision({
+                signal: opportunityResult.signal,
+                strength: opportunityResult.strength,
+                confidence: opportunityResult.confidence,
+                momentumValue: 0,
+                reversalValue: 0,
+                statisticalValue: statisticalContext.pressure,
+                patternValue: 0
+            });
+            app.innerHTML = `
+                <div class="mx-auto w-full px-3 py-3 md:px-6 md:py-6" style="max-width: 100%; overflow-x: hidden;">
+                    <header class="mb-4 md:mb-8 text-center">
+                        <div class="mb-2 inline-flex items-center justify-center rounded-full bg-primary/10 px-2 py-1 text-xs md:text-sm font-medium text-primary">✨ IA Preditiva</div>
+                        <h1 class="mb-2 text-xl md:text-3xl lg:text-5xl font-extrabold tracking-tight">Painel <span class="text-accent">Preditivo</span></h1>
+                    </header>
+                    ${renderTimeline(result)}
+                    <div class="grid gap-3 md:gap-6 grid-cols-1 lg:grid-cols-12">
+                        <div class="space-y-3 md:space-y-6 lg:col-span-4">
+                            <div class="rounded-2xl border p-6 bg-card shadow-glow">
+                                <h3 class="mb-4 text-lg font-bold">📋 Entrada de Dados</h3>
+                                <textarea id="text-input" class="w-full h-40 p-3 rounded-lg border border-border bg-muted text-foreground text-sm font-mono placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent" placeholder="Cole a lista aqui:\n02/05/2026 11:18:48\n11:18\n\n02/05/2026 11:17:48\n10\n11:17"></textarea>
+                                <button onclick="processTextListInput(document.getElementById('text-input').value)" class="mt-3 w-full inline-flex h-10 items-center justify-center rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all">✅ Processar Lista</button>
+                                
+                                <button onclick="toggleAutomation()" id="automation-btn" class="mt-2 w-full inline-flex h-10 items-center justify-center rounded-md border border-accent text-accent px-6 text-sm font-medium hover:bg-accent/10 transition-all">🤖 Alternar Automação</button>
+    
+                                <div id="preview-container" class="mt-4 flex justify-center"></div>
+                            </div>
+                            <div class="rounded-2xl border p-6 bg-card">
+                                <h3 class="mb-4 text-lg font-bold">Resumo</h3>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="rounded-xl bg-secondary p-4"><p class="text-xs text-muted-foreground uppercase">Eventos</p><p class="text-2xl font-bold text-accent">${result.totalEntries}</p></div>
+                                    <div class="rounded-xl bg-secondary p-4"><p class="text-xs text-muted-foreground uppercase">Confiança</p><p class="text-2xl font-bold text-accent">${result.confidence}%</p></div>
+                                </div>
+                                                                <div class="rounded-xl bg-secondary/50 p-3 mb-4 text-center">
+                                    <p class="text-xs text-muted-foreground">${getHistoryStatus()} | ${getAutomationStatus()}</p>
+                                </div>
+                                <button onclick="clearHistory()" class="mt-6 w-full text-xs text-muted-foreground hover:text-destructive">Limpar dados</button>
+                            </div>
+                        </div>
+                        <div class="space-y-3 md:space-y-6 lg:col-span-8">
+                                                        ${renderTrendScore(result)}
+                            ${renderConsistency(result)}
+                            <button id="replay-btn" onclick="startReplay()" class="w-full inline-flex h-10 items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-all">▶ Replay</button>
+                            <div id="replay-chart-container">
+                                ${renderWaveChart(trendData, result)}
+                            </div>
+                                                        ${renderPatternDetector(entries)}
+                            ${renderOpportunity(opportunityResult)}
+                            ${renderAdaptiveAIDashboard()}
+                                                        <div class="rounded-2xl border p-6 gradient-panel shadow-glow">
+                                <h3 class="text-xl font-bold mb-6">Próximas Janelas</h3>
+                                <div class="grid gap-4 md:grid-cols-3">
+                                    ${result.predictions.map(p => `<div class="rounded-xl border border-white/10 bg-white/5 p-5"><div class="text-xl font-bold text-foreground">${p}</div><div class="text-xs text-accent">Alta Probabilidade</div></div>`).join('')}
+                                </div>
+                            </div>
+                            ${renderPredictionExplanations(result)}
+                            <details class="rounded-2xl border p-4 bg-card"><summary class="cursor-pointer font-semibold">Horários Extraídos (${allTimes.length})</summary><div class="mt-3 flex flex-wrap gap-2">${allTimes.map(t => `<span class="rounded-md bg-secondary px-2 py-1 font-mono text-xs">${t}</span>`).join('')}</div></details>
+                        </div>
+                    </div>
+                </div>
+            `;
+            setupEventListeners();
+        }
+
+        // ============================================================================
+        // 📊 MÉTRICA DE CONSISTÊNCIA - CONFIABILIDADE DOS DADOS
+        // ============================================================================
+        function calculateConsistency(result) {
+            if (!result.hotZones || result.hotZones.length === 0) {
+                return { level: 'BAIXA', percentage: 0, description: 'Sem dados para análise' };
+            }
+
+            const topProbability = result.hotZones[0]?.probability || 0;
+            let level = 'BAIXA';
+            let percentage = Math.round(topProbability * 100);
+
+            if (topProbability > 0.15) {
+                level = 'ALTA';
+            } else if (topProbability >= 0.08) {
+                level = 'MÉDIA';
+            }
+
+            // Ajustar com base na quantidade de dados
+            if (result.totalEntries < 5) {
+                percentage = Math.max(0, percentage - 20);
+                level = 'BAIXA';
+            } else if (result.totalEntries < 10) {
+                percentage = Math.max(0, percentage - 10);
+            }
+
+            return { level, percentage, description: `${level} CONSISTÊNCIA` };
+        }
+
+        function renderConsistency(result) {
+            const consistency = calculateConsistency(result);
+            const colorMap = {
+                'ALTA': '#FF3B3B',
+                'MÉDIA': '#FFA500',
+                'BAIXA': '#666666'
+            };
+            const color = colorMap[consistency.level] || '#666666';
+
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold" style="color: ${color};">📊 ${consistency.description}</h3>
+                            <p class="text-sm text-muted-foreground mt-1">Confiabilidade dos dados analisados</p>
+                        </div>
+                        <div class="text-4xl font-bold" style="color: ${color};">${consistency.percentage}%</div>
+                    </div>
+                    <div class="mt-3 w-full bg-muted rounded-full h-2 overflow-hidden">
+                        <div style="width: ${consistency.percentage}%; height: 100%; background-color: ${color}; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================================================
+        // 🧠 PREVISÃO EXPLICADA - INTELIGÊNCIA CONTEXTUAL
+        // ============================================================================
+        function explainPredictions(result) {
+            if (!result.predictions || result.predictions.length === 0) {
+                return [];
+            }
+
+            return result.predictions.map((prediction, idx) => {
+                const zone = result.hotZones && result.hotZones[idx];
+                let explanation = 'Baseado em análise de padrões';
+
+                if (zone) {
+                    if (zone.probability > 0.15) {
+                        explanation = '🔴 Alta concentração de eventos neste horário';
+                    } else if (zone.probability > 0.10) {
+                        explanation = '🟡 Concentração moderada de eventos';
+                    } else {
+                        explanation = '⚪ Baseado em padrão recente detectado';
+                    }
+                }
+
+                // Adicionar contexto de padrão se disponível
+                if (result.patterns && result.patterns.length > 0) {
+                    explanation += ' • ' + result.patterns[0];
+                }
+
+                return { prediction, explanation };
+            });
+        }
+
+        function renderPredictionExplanations(result) {
+            const explanations = explainPredictions(result);
+            
+            if (explanations.length === 0) {
+                return '';
+            }
+
+            const explanationsHTML = explanations.map((item, idx) => `
+                <div class="rounded-xl border border-white/10 bg-white/5 p-4 mb-3">
+                    <div class="text-sm font-bold text-foreground mb-1">${item.prediction}</div>
+                    <div class="text-xs text-muted-foreground italic">${item.explanation}</div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="rounded-2xl border p-5 bg-card shadow-glow mt-4">
+                    <h3 class="text-lg font-bold mb-4">💡 Por que essas previsões?</h3>
+                    ${explanationsHTML}
+                </div>
+            `;
+        }
+
+                // ============================================================================
+        // 🚀 MÓDULO AVANÇADO DE ANÁLISE DE OPORTUNIDADES
+        // ============================================================================
+
+        // 1. MOMENTUM - Força da sequência
+        function getMomentum(entries) {
+            if (entries.length < 2) return { signal: 'NEUTRO', score: 0 };
+            
+            const last = entries.slice(-3);
+            const colors = last.map(e => e.color);
+            
+            if (colors.every(c => c === 'up')) {
+                return { signal: 'ALTA', score: 20, reason: 'Momentum de alta detectado' };
+            }
+            if (colors.every(c => c === 'down')) {
+                return { signal: 'BAIXA', score: -20, reason: 'Momentum de baixa detectado' };
+            }
+            return { signal: 'NEUTRO', score: 0 };
+        }
+
+        // 2. REVERSÃO CURTA
+        function detectReversal(entries) {
+            if (entries.length < 3) return { score: 0 };
+            
+            const last3 = entries.slice(-3).map(e => e.color);
+            
+            if (last3[0] === 'down' && last3[1] === 'down' && last3[2] === 'up') {
+                return { score: 25, reason: 'Sinal de reversão de alta detectado' };
+            }
+            if (last3[0] === 'up' && last3[1] === 'up' && last3[2] === 'down') {
+                return { score: -25, reason: 'Sinal de reversão de baixa detectado' };
+            }
+            return { score: 0 };
+        }
+
+        // 3. CLUSTER DE COR
+        function getCluster(entries) {
+            if (entries.length < 5) return { score: 0 };
+            
+            const last10 = entries.slice(-10);
+            const upCount = last10.filter(e => e.color === 'up').length;
+            const downCount = last10.filter(e => e.color === 'down').length;
+            
+            const upPercentage = upCount / last10.length;
+            const downPercentage = downCount / last10.length;
+            
+            if (upPercentage > 0.7) {
+                return { score: 20, reason: 'Cluster de alta dominante' };
+            }
+            if (downPercentage > 0.7) {
+                return { score: -20, reason: 'Cluster de baixa dominante' };
+            }
+            return { score: 0 };
+        }
+
+        // 4. FADIGA (Exaustão)
+        function detectFatigue(entries) {
+            if (entries.length < 4) return { score: 0 };
+            
+            const last4 = entries.slice(-4).map(e => e.color);
+            
+            if (last4.every(c => c === last4[0]) && last4.length >= 4) {
+                return { score: -15, reason: 'Fadiga detectada - possível reversão' };
+            }
+            return { score: 0 };
+        }
+
+        // 5. EQUILÍBRIO (Mercado lateral)
+        function detectEquilibrium(entries) {
+            if (entries.length < 4) return { score: 0 };
+            
+            const last6 = entries.slice(-6).map(e => e.color);
+            let alternating = true;
+            
+            for (let i = 1; i < last6.length; i++) {
+                if (last6[i] === last6[i - 1]) {
+                    alternating = false;
+                    break;
+                }
+            }
+            
+            if (alternating) {
+                return { score: -20, reason: 'Mercado em equilíbrio (baixo sinal)' };
+            }
+            return { score: 0 };
+        }
+
+        // 6. PADRÃO TEMPORAL (Hotzone)
+        function checkHotzone(entries, result) {
+            if (!result.hotZones || result.hotZones.length === 0) return { score: 0 };
+            
+            const topZone = result.hotZones[0];
+            if (topZone.probability > 0.15) {
+                return { score: 15, reason: 'Zona de alta probabilidade ativa' };
+            }
+            return { score: 0 };
+        }
+
+        // 7. ACELERAÇÃO
+        function detectAcceleration(entries) {
+            if (entries.length < 5) return { score: 0 };
+            
+            const last5 = entries.slice(-5);
+            let acceleration = 0;
+            
+            for (let i = 1; i < last5.length; i++) {
+                if (last5[i].color === last5[i - 1].color) {
+                    acceleration++;
+                }
+            }
+            
+            if (acceleration >= 3) {
+                return { score: 12, reason: 'Movimento acelerado detectado' };
+            }
+            return { score: 0 };
+        }
+
+        // 8. PROBABILIDADE CONDICIONAL
+        function conditionalProbability(entries) {
+            if (entries.length < 3) return { score: 0 };
+            
+            const last3 = entries.slice(-3).map(e => e.color);
+            const pattern = last3.join('-');
+            
+            const upPatterns = ['down-down-up', 'down-up-up', 'up-up-up'];
+            const downPatterns = ['up-up-down', 'up-down-down', 'down-down-down'];
+            
+            if (upPatterns.includes(pattern)) {
+                return { score: 18, reason: 'Padrão condicional de alta' };
+            }
+            if (downPatterns.includes(pattern)) {
+                return { score: -18, reason: 'Padrão condicional de baixa' };
+            }
+            return { score: 0 };
+        }
+
+        // 9. PADRÃO DE ESCADA
+        function detectStairPattern(entries) {
+            if (entries.length < 4) return { score: 0 };
+            
+            const last4 = entries.slice(-4).map(e => e.color);
+            
+            if (last4[0] === 'down' && last4[1] === 'up' && last4[2] === 'down' && last4[3] === 'up') {
+                return { score: 16, reason: 'Padrão de escada de alta' };
+            }
+            if (last4[0] === 'up' && last4[1] === 'down' && last4[2] === 'up' && last4[3] === 'down') {
+                return { score: -16, reason: 'Padrão de escada de baixa' };
+            }
+            return { score: 0 };
+        }
+
+        // 10. BREAKOUT
+        function detectBreakout(entries) {
+            if (entries.length < 5) return { score: 0 };
+            
+            const last5 = entries.slice(-5).map(e => e.color);
+            const downSequence = last5.slice(0, 3).every(c => c === 'down');
+            const upBreak = last5[3] === 'up' && last5[4] === 'up';
+            
+            if (downSequence && upBreak) {
+                return { score: 22, reason: 'Breakout de alta detectado' };
+            }
+            
+            const upSequence = last5.slice(0, 3).every(c => c === 'up');
+            const downBreak = last5[3] === 'down' && last5[4] === 'down';
+            
+            if (upSequence && downBreak) {
+                return { score: -22, reason: 'Breakout de baixa detectado' };
+            }
+            return { score: 0 };
+        }
+
+        // 11. CICLOS (Loops)
+        function detectCycles(entries) {
+            if (entries.length < 6) return { score: 0 };
+            
+            const last6 = entries.slice(-6).map(e => e.color);
+            const pattern = last6.slice(0, 3).join('-');
+            const repeat = last6.slice(3, 6).join('-');
+            
+            if (pattern === repeat) {
+                if (pattern.includes('up')) {
+                    return { score: 14, reason: 'Ciclo de alta detectado' };
+                } else {
+                    return { score: -14, reason: 'Ciclo de baixa detectado' };
+                }
+            }
+            return { score: 0 };
+        }
+
+        // 12. VELAS ESPECIAIS
+        function analyzeSpecialCandle(entries) {
+            if (entries.length < 2) return { score: 0 };
+            
+            const lastTwo = entries.slice(-2);
+            const hasSpecial = lastTwo.some(e => e.color === 'special');
+            
+            if (!hasSpecial) return { score: 0 };
+            
+            const prevColor = lastTwo[0].color;
+            
+            if (prevColor === 'down' && lastTwo[1].color === 'special') {
+                return { score: 18, reason: 'Vela especial após queda - favorece alta' };
+            }
+            if (prevColor === 'up' && lastTwo[1].color === 'special') {
+                return { score: -12, reason: 'Vela especial após alta - possível reversão' };
+            }
+            return { score: 0 };
+        }
+
+        // ENGINE PRINCIPAL
+        function analyzeOpportunities(entries, result) {
+            if (entries.length === 0) {
+                return {
+                    signal: 'NEUTRO',
+                    strength: 0,
+                    confidence: 0,
+                    reasons: ['Sem dados para análise'],
+                    details: {}
+                };
+            }
+
+            let score = 0;
+            const reasons = [];
+            const details = {};
+
+            // Executar todos os filtros
+            const filters = [
+                getMomentum(entries),
+                detectReversal(entries),
+                getCluster(entries),
+                detectFatigue(entries),
+                detectEquilibrium(entries),
+                checkHotzone(entries, result),
+                detectAcceleration(entries),
+                conditionalProbability(entries),
+                detectStairPattern(entries),
+                detectBreakout(entries),
+                detectCycles(entries),
+                analyzeSpecialCandle(entries)
+            ];
+
+            // Agregar scores e razões
+            filters.forEach(filter => {
+                if (filter.score) score += filter.score;
+                if (filter.reason) reasons.push(filter.reason);
+                if (filter.signal) details[filter.reason] = filter.signal;
+            });
+
+            // Normalizar score
+            const normalizedScore = Math.min(100, Math.max(0, score + 50));
+            
+            // Definir sinal
+            let signal = 'NEUTRO';
+            if (normalizedScore > 65) signal = 'ALTA';
+            else if (normalizedScore < 35) signal = 'BAIXA';
+
+            // Calcular confiança
+            const confidence = Math.min(100, Math.abs(score) + 30);
+
+            return {
+                signal,
+                strength: normalizedScore,
+                confidence,
+                reasons: reasons.length > 0 ? reasons : ['Análise neutra'],
+                details
+            };
+        }
+
+        // RENDERIZAÇÃO
+        function renderOpportunity(opportunityResult) {
+            if (!opportunityResult) return '';
+
+            const signalColors = {
+                'ALTA': '#FF3B3B',
+                'BAIXA': '#111111', // Ajustado para preto (baixa) conforme o padrão do sistema
+                'NEUTRO': '#FFA500'
+            };
+
+            const signalEmojis = {
+                'ALTA': '📈',
+                'BAIXA': '📉',
+                'NEUTRO': '⚖️'
+            };
+
+            const color = signalColors[opportunityResult.signal] || '#FFA500';
+            const emoji = signalEmojis[opportunityResult.signal] || '🟡';
+
+            const reasonsHTML = opportunityResult.reasons
+                .slice(0, 5)
+                .map(r => `<li class="text-xs text-muted-foreground">✓ ${r}</li>`)
+                .join('');
+
+            return `
+                <div class="rounded-2xl border p-6 bg-card shadow-glow mt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            ${emoji} Oportunidade: <span style="color: ${color};">${opportunityResult.signal}</span>
+                        </h3>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="rounded-lg bg-secondary/50 p-3 border border-white/5">
+                        <p class="text-[10px] text-muted-foreground uppercase font-bold">Força do Sinal</p>
+                        <p class="text-2xl font-bold" style="color: ${color};">${opportunityResult.strength}%</p>
+                    </div>
+                    <div class="rounded-lg bg-secondary/50 p-3 border border-white/5">
+                        <p class="text-[10px] text-muted-foreground uppercase font-bold">Confiança da IA</p>
+                        <p class="text-2xl font-bold" style="color: ${color};">${opportunityResult.confidence}%</p>
+                    </div>
+                    </div>
+
+                    <div class="rounded-lg bg-secondary/30 p-3">
+                        <p class="text-xs font-semibold mb-2 text-muted-foreground">Motivos:</p>
+                        <ul class="space-y-1">
+                            ${reasonsHTML}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+                // ============================================================================
+        // 📊 MÓDULO DE ANÁLISE ESTATÍSTICA AVANÇADA
+        // ============================================================================
+
+        // Distribuição esperada
+        const EXPECTED_DISTRIBUTION = {
+            up: 0.47,
+            down: 0.47,
+            special: 0.06
+        };
+
+        // 1. DESVIO ESTATÍSTICO
+        function calculateDeviation(entries, windowSize = 100) {
+            if (entries.length === 0) {
+                return {
+                    upDeviation: 0,
+                    downDeviation: 0,
+                    specialDeviation: 0,
+                    upPct: 0,
+                    downPct: 0,
+                    specialPct: 0
+                };
+            }
+
+            const window = entries.slice(-windowSize);
+            const upCount = window.filter(e => e.color === 'up').length;
+            const downCount = window.filter(e => e.color === 'down').length;
+            const specialCount = window.filter(e => e.color === 'special').length;
+
+            const upPct = upCount / window.length;
+            const downPct = downCount / window.length;
+            const specialPct = specialCount / window.length;
+
+            return {
+                upDeviation: upPct - EXPECTED_DISTRIBUTION.up,
+                downDeviation: downPct - EXPECTED_DISTRIBUTION.down,
+                specialDeviation: specialPct - EXPECTED_DISTRIBUTION.special,
+                upPct,
+                downPct,
+                specialPct
+            };
+        }
+
+        // 2. PRESSÃO DE REEQUILÍBRIO
+        function calculateRebalancePressure(deviation) {
+            let pressure = 0;
+            let reason = '';
+
+            if (deviation.upDeviation > 0.10) {
+                pressure -= 25;
+                reason = 'Pressão forte para BAIXA (muita alta)';
+            } else if (deviation.upDeviation > 0.05) {
+                pressure -= 15;
+                reason = 'Pressão média para BAIXA';
+            } else if (deviation.upDeviation > 0.02) {
+                pressure -= 5;
+                reason = 'Leve pressão para BAIXA';
+            }
+
+            if (deviation.downDeviation > 0.10) {
+                pressure += 25;
+                reason = 'Pressão forte para ALTA (muita baixa)';
+            } else if (deviation.downDeviation > 0.05) {
+                pressure += 15;
+                reason = 'Pressão média para ALTA';
+            } else if (deviation.downDeviation > 0.02) {
+                pressure += 5;
+                reason = 'Leve pressão para ALTA';
+            }
+
+            if (deviation.specialDeviation < -0.02) {
+                pressure += 8;
+                reason = 'Branco abaixo do esperado - chance de aumento';
+            }
+
+            return { pressure, reason };
+        }
+
+        // 3. DETECÇÃO DE ANOMALIA
+        function detectStatisticalAnomaly(deviation) {
+            const upDevAbs = Math.abs(deviation.upDeviation);
+            const downDevAbs = Math.abs(deviation.downDeviation);
+            const specialDevAbs = Math.abs(deviation.specialDeviation);
+
+            if (upDevAbs > 0.10 || downDevAbs > 0.10) {
+                return { isAnomaly: true, severity: 'forte' };
+            }
+
+            if (deviation.specialPct < 0.03 || deviation.specialPct > 0.10) {
+                return { isAnomaly: true, severity: 'média' };
+            }
+
+            if (upDevAbs > 0.05 || downDevAbs > 0.05) {
+                return { isAnomaly: true, severity: 'leve' };
+            }
+
+            return { isAnomaly: false, severity: 'nenhuma' };
+        }
+
+        // 4. PROBABILIDADE ADAPTATIVA
+        function calculateAdaptiveProbability(deviation) {
+            const upDevAbs = Math.abs(deviation.upDeviation);
+            const downDevAbs = Math.abs(deviation.downDeviation);
+            const maxDeviation = Math.max(upDevAbs, downDevAbs);
+
+            if (maxDeviation < 0.02) {
+                return { boost: 0, description: 'Mercado equilibrado' };
+            } else if (maxDeviation < 0.05) {
+                return { boost: 5, description: 'Desequilíbrio leve' };
+            } else if (maxDeviation < 0.10) {
+                return { boost: 12, description: 'Desequilíbrio moderado' };
+            } else {
+                return { boost: 20, description: 'Desequilíbrio forte' };
+            }
+        }
+
+        // ENGINE PRINCIPAL
+        function analyzeStatisticalContext(entries) {
+            if (entries.length === 0) {
+                return {
+                    deviation: {},
+                    pressure: 0,
+                    anomaly: false,
+                    confidenceBoost: 0,
+                    insights: ['Sem dados para análise estatística']
+                };
+            }
+
+            const insights = [];
+            let totalScore = 0;
+            let totalBoost = 0;
+
+            // Análise multi-janela
+            const windows = [
+                { size: 25, weight: 1.0, label: 'curto' },
+                { size: 50, weight: 1.5, label: 'médio' },
+                { size: 100, weight: 2.0, label: 'longo' }
+            ];
+
+            windows.forEach(window => {
+                const deviation = calculateDeviation(entries, window.size);
+                const rebalance = calculateRebalancePressure(deviation);
+                const anomaly = detectStatisticalAnomaly(deviation);
+                const probability = calculateAdaptiveProbability(deviation);
+
+                const weightedPressure = rebalance.pressure * window.weight;
+                const weightedBoost = probability.boost * window.weight;
+
+                totalScore += weightedPressure;
+                totalBoost += weightedBoost;
+
+                if (rebalance.reason) {
+                    insights.push(`[${window.label}] ${rebalance.reason}`);
+                }
+
+                if (anomaly.isAnomaly && window.label === 'longo') {
+                    insights.push(`Anomalia ${anomaly.severity} detectada`);
+                }
+            });
+
+            // Análise final
+            const finalDeviation = calculateDeviation(entries, 100);
+            const finalAnomaly = detectStatisticalAnomaly(finalDeviation);
+
+            // Normalizar
+            const avgPressure = totalScore / windows.length;
+            const avgBoost = Math.min(20, totalBoost / windows.length);
+
+            if (finalDeviation.upPct > 0.50) {
+                insights.push('Vermelho acima do esperado');
+            }
+            if (finalDeviation.downPct > 0.50) {
+                insights.push('Preto acima do esperado');
+            }
+            if (finalDeviation.specialPct < 0.04) {
+                insights.push('Branco raro - possível aumento');
+            }
+
+            return {
+                deviation: finalDeviation,
+                pressure: Math.round(avgPressure),
+                anomaly: finalAnomaly.isAnomaly,
+                confidenceBoost: Math.round(avgBoost),
+                insights: insights.slice(0, 5)
+            };
+        }
+
+                // ============================================================================
+        // 📝 MÓDULO DE PARSING DE LISTA DE TEXTO
+        // ============================================================================
+
+        function parseTextList(textInput) {
+            const lines = textInput.trim().split('\n').map(l => l.trim()).filter(l => l);
+            const entries = [];
+            
+            let i = 0;
+            while (i < lines.length) {
+                // Procurar por padrão de data/hora (DD/MM/YYYY HH:MM:SS)
+                const dateTimeMatch = lines[i].match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+                
+                if (!dateTimeMatch) {
+                    i++;
+                    continue;
+                }
+
+                const [, day, month, year, hours, minutes, seconds] = dateTimeMatch;
+                const fullDateTime = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+                
+                // Próxima linha pode ser um número ou um horário
+                let colorNumber = null;
+                let timeHour = null;
+                let timeMinute = null;
+                let nextIndex = i + 1;
+
+                // Verificar se a próxima linha é um número
+                if (nextIndex < lines.length) {
+                    const numberMatch = lines[nextIndex].match(/^(\d+)$/);
+                    if (numberMatch) {
+                        colorNumber = parseInt(numberMatch[1]);
+                        nextIndex++;
+                    }
+                }
+
+                // Procurar pelo horário (HH:MM)
+                if (nextIndex < lines.length) {
+                    const timeMatch = lines[nextIndex].match(/^(\d{2}):(\d{2})$/);
+                    if (timeMatch) {
+                        [, timeHour, timeMinute] = timeMatch;
+                        timeHour = parseInt(timeHour);
+                        timeMinute = parseInt(timeMinute);
+                        nextIndex++;
+                    }
+                }
+
+                // Se encontrou horário, adicionar entrada
+                if (timeHour !== null && timeMinute !== null) {
+                    // Determinar cor baseada no número (Refinado para Brancos/Especiais)
+                    let color = 'special'; // Padrão: branco (especial)
+                    
+                    if (colorNumber !== null) {
+                        // Se o número for de 1 a 7 -> Vermelho (Alta)
+                        if (colorNumber >= 1 && colorNumber <= 7) {
+                            color = 'up';
+                        } 
+                        // Se o número for de 8 a 14 -> Preto (Baixa)
+                        else if (colorNumber >= 8 && colorNumber <= 14) {
+                            color = 'down';
+                        }
+                        // Caso contrário (ex: 0, 15+ ou nulo) -> Branco (Especial)
+                        else {
+                            color = 'special';
+                        }
+                    } else {
+                        // Se não houver número, mas houver horário, tratamos como especial/branco
+                        color = 'special';
+                    }
+
+                    entries.push({
+                        date: fullDateTime,
+                        hour: timeHour,
+                        minute: timeMinute,
+                        color: color,
+                        number: colorNumber
+                    });
+
+                    i = nextIndex;
+                } else {
+                    i++;
+                }
+            }
+
+            return entries;
+        }
+
+        
+        
+        async function fetchData() {
+            // Mudança para a API oficial da Blaze para evitar bloqueios do TipMiner
+            const targetUrl = 'https://blaze1.space/api/roulette_games/recent';
+            const proxies = [
+                url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&timestamp=${Date.now()}`
+            ];
+
+            let success = false;
+            let lastError = null;
+
+            // Verificar se está rodando via file://
+            if (window.location.protocol === 'file:') {
+                console.warn('Atenção: Executar via file:// pode causar bloqueios de CORS. Recomenda-se usar o GitHub Pages ou um servidor local.');
+            }
+
+            for (const proxyFn of proxies) {
+                try {
+                    const finalUrl = proxyFn(targetUrl);
+                    console.log('Tentando buscar dados via:', finalUrl);
+                    
+                    const response = await fetch(finalUrl);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    
+                    let html = '';
+                    const textData = await response.text();
+                    
+                    try {
+                        const jsonData = JSON.parse(textData);
+                        if (jsonData && jsonData.contents) {
+                            html = jsonData.contents;
+                        } else if (typeof jsonData === 'string') {
+                            html = jsonData;
+                        } else {
+                            html = textData;
+                        }
+                    } catch (e) {
+                        // Se não for JSON, usa o texto puro
+                        html = textData;
+                    }
+    
+                    if (!html || html.length < 100) throw new Error('Conteúdo retornado muito curto ou inválido');
+
+                    const newEntries = [];
+                    let latestTimestamp = null;
+
+                    try {
+                        let results = [];
+                        const jsonData = JSON.parse(html);
+                        
+                        // A API da Blaze retorna um array direto ou dentro de um objeto
+                        results = Array.isArray(jsonData) ? jsonData : (jsonData.records || jsonData.results || []);
+
+                        if (results.length > 0) {
+                            results.forEach(res => {
+                                // A Blaze usa 'color' (1=vermelho, 2=preto, 0=branco) e 'created_at'
+                                const color = res.color;
+                                const date = new Date(res.created_at);
+                                // Ajustar para o fuso horário de Brasília (UTC-3)
+                                date.setHours(date.getHours() - 3);
+                                const timeStr = date.toISOString().split('T')[1].substring(0, 5);
+
+                                let internalColor = 'neutral';
+                                if (color === 1) internalColor = 'up';    // Vermelho na Blaze é 1
+                                else if (color === 2) internalColor = 'down'; // Preto na Blaze é 2
+                                else if (color === 0) internalColor = 'special'; // Branco na Blaze é 0
+                                
+                                newEntries.push(`${timeStr}|${internalColor}`);
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('Erro ao processar JSON da Blaze, tentando Regex:', e);
+                        // Fallback Regex para a API da Blaze
+                        const regex = /"color":\s*(\d+)[^}]*"created_at":"[^T]*T(\d{2}:\d{2})/g;
+                        let match;
+                        while ((match = regex.exec(html)) !== null) {
+                            const color = parseInt(match[1]);
+                            const timeStr = match[2];
+                            let internalColor = 'neutral';
+                            if (color === 1) internalColor = 'up';
+                            else if (color === 2) internalColor = 'down';
+                            else if (color === 0) internalColor = 'special';
+                            newEntries.push(`${timeStr}|${internalColor}`);
+                        }
+                    }
+
+                    console.log(`DEBUG: Extraídos ${newEntries.length} resultados da Blaze.`);
+
+                    if (newEntries.length === 0) {
+                        throw new Error('Nenhum dado encontrado na API da Blaze.');
+                    }
+
+                    latestTimestamp = newEntries[0]?.split('|')[0];
+                    if (latestTimestamp && latestTimestamp === lastProcessedTimestamp) {
+                        console.log('Sem novos dados no TipMiner.');
+                        success = true;
+                        break;
+                    }
+
+                    if (newEntries.length > 0) {
+                        lastProcessedTimestamp = latestTimestamp;
+                        newEntries.forEach(entry => {
+                            const timeStr = entry.split('|')[0];
+                            const existingIndex = allTimes.findIndex(t => t.startsWith(timeStr));
+                            if (existingIndex === -1) {
+                                allTimes.push(entry);
+                            } else if (allTimes[existingIndex].endsWith('|neutral') && !entry.endsWith('|neutral')) {
+                                allTimes[existingIndex] = entry;
+                            }
+                        });
+
+                        allTimes.sort((a, b) => a.split('|')[0].localeCompare(b.split('|')[0]));
+                        saveHistory();
+                        updateUI();
+                        showToast(`🔄 Sincronizado: ${newEntries.length} resultados.`, 'success');
+                    }
+                    
+                    success = true;
+                    break; // Sai do loop de proxies se tiver sucesso
+                } catch (error) {
+                    console.error('Falha no proxy:', error);
+                    lastError = error;
+                    continue; // Tenta o próximo proxy
+                }
+            }
+
+            if (!success) {
+                showToast('Erro de conexão. Verifique o console para detalhes.', 'error');
+                if (window.location.protocol === 'file:') {
+                    showToast('Dica: Tente hospedar no GitHub Pages para evitar erros de CORS local.', 'warning');
+                }
+            }
+        }
+    
+        function toggleAutomation() {
+            if (isAutomationRunning) {
+                clearInterval(automationInterval);
+                isAutomationRunning = false;
+                showToast('Automação desativada.', 'warning');
+            } else {
+                fetchData(); // Busca imediata
+                automationInterval = setInterval(fetchData, 15000);
+                isAutomationRunning = true;
+                showToast('Automação ativada (15s).', 'success');
+            }
+            updateUI();
+        }
+    
+        function processTextListInput(textInput) {
+            try {
+                const entries = parseTextList(textInput);
+                
+                if (entries.length === 0) {
+                    showToast('Nenhuma entrada válida encontrada. Verifique o formato.', 'warning');
+                    return;
+                }
+
+                // Converter para formato de horário com cor (HH:MM|color)
+                entries.forEach(e => {
+                    const h = String(e.hour).padStart(2, '0');
+                    const m = String(e.minute).padStart(2, '0');
+                    const timeStr = `${h}:${m}`;
+                    const timeWithColor = `${timeStr}|${e.color}`;
+                    
+                    // Verificar se já existe esse horário (independente da cor)
+                    const existingIndex = allTimes.findIndex(t => t.startsWith(timeStr));
+                    if (existingIndex !== -1) {
+                        // Atualizar cor se for diferente de neutral
+                        if (e.color !== 'neutral') {
+                            allTimes[existingIndex] = timeWithColor;
+                        }
+                    } else {
+                        allTimes.push(timeWithColor);
+                    }
+                });
+                
+                // Ordenar cronologicamente pelo horário
+                allTimes.sort((a, b) => {
+                    const tA = a.split('|')[0];
+                    const tB = b.split('|')[0];
+                    return tA.localeCompare(tB);
+                });
+
+                // Salvar no localStorage
+                saveHistory();
+
+                // Atualizar UI
+                updateUI();
+
+                showToast(`✅ ${entries.length} entrada(s) adicionada(s) com sucesso!`, 'success');
+                
+                // Limpar textarea
+                const textarea = document.getElementById('text-input');
+                if (textarea) textarea.value = '';
+
+            } catch (error) {
+                console.error('Erro ao processar lista:', error);
+                showToast('Erro ao processar a lista. Verifique o formato.', 'error');
+            }
+        }
+
+                // ============================================================================
+        // 🤖 MÓDULO DE IA ADAPTATIVA - APRENDIZADO COM REFORÇO
+        // ============================================================================
+
+        // Estrutura global da IA Adaptativa
+        const AdaptiveAI = {
+            weights: {
+                momentum: 20,
+                reversal: 25,
+                statistical: 15,
+                pattern: 20,
+                special: 10,
+                acceleration: 12,
+                breakout: 22,
+                cycles: 14
+            },
+            history: [],
+            accuracy: 50,
+            pendingDecision: null,
+            patternMemory: {},
+            maxHistorySize: 200
+        };
+
+        // Carregar pesos salvos do localStorage
+        function loadAdaptiveWeights() {
+            const saved = localStorage.getItem('adaptiveAI_weights');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    AdaptiveAI.weights = data.weights || AdaptiveAI.weights;
+                    AdaptiveAI.accuracy = data.accuracy || 50;
+                    AdaptiveAI.history = data.history || [];
+                    AdaptiveAI.patternMemory = data.patternMemory || {};
+                    console.log('✅ Pesos adaptativos carregados:', AdaptiveAI.weights);
+                } catch (e) {
+                    console.warn('Erro ao carregar pesos adaptativos:', e);
+                }
+            }
+        }
+
+        // Salvar pesos no localStorage
+        function saveAdaptiveWeights() {
+            const data = {
+                weights: AdaptiveAI.weights,
+                accuracy: AdaptiveAI.accuracy,
+                history: AdaptiveAI.history.slice(-AdaptiveAI.maxHistorySize),
+                patternMemory: AdaptiveAI.patternMemory
+            };
+            localStorage.setItem('adaptiveAI_weights', JSON.stringify(data));
+        }
+
+        // 1. REGISTRO DE DECISÕES
+        function recordDecision(decisionData) {
+            const record = {
+                timestamp: Date.now(),
+                decision: decisionData.signal,
+                score: decisionData.strength,
+                confidence: decisionData.confidence,
+                filters: {
+                    momentum: decisionData.momentumValue || 0,
+                    reversal: decisionData.reversalValue || 0,
+                    statistical: decisionData.statisticalValue || 0,
+                    pattern: decisionData.patternValue || 0
+                },
+                status: 'pending'
+            };
+
+            AdaptiveAI.history.push(record);
+            AdaptiveAI.pendingDecision = record;
+
+            // Manter limite de histórico
+            if (AdaptiveAI.history.length > AdaptiveAI.maxHistorySize) {
+                AdaptiveAI.history.shift();
+            }
+
+            saveAdaptiveWeights();
+            return record;
+        }
+
+        // 2. REGISTRO DO RESULTADO REAL
+        function recordOutcome(resultColor) {
+            if (!AdaptiveAI.pendingDecision) {
+                console.warn('Nenhuma decisão pendente para registrar resultado');
+                return;
+            }
+
+            const decision = AdaptiveAI.pendingDecision;
+            const correct = (decision.decision === 'ALTA' && resultColor === 'up') ||
+                           (decision.decision === 'BAIXA' && resultColor === 'down');
+
+            decision.status = 'completed';
+            decision.result = resultColor;
+            decision.correct = correct;
+
+            // Atualizar acurácia
+            const recentDecisions = AdaptiveAI.history.filter(d => d.status === 'completed').slice(-20);
+            const correctCount = recentDecisions.filter(d => d.correct).length;
+            AdaptiveAI.accuracy = Math.round((correctCount / Math.max(1, recentDecisions.length)) * 100);
+
+            // Aplicar aprendizado
+            adaptWeights(decision, correct);
+
+            // Guardar padrão
+            const patternKey = Object.values(decision.filters).join('-');
+            if (!AdaptiveAI.patternMemory[patternKey]) {
+                AdaptiveAI.patternMemory[patternKey] = { correct: 0, wrong: 0 };
+            }
+            if (correct) {
+                AdaptiveAI.patternMemory[patternKey].correct++;
+            } else {
+                AdaptiveAI.patternMemory[patternKey].wrong++;
+            }
+
+            AdaptiveAI.pendingDecision = null;
+            saveAdaptiveWeights();
+
+            console.log(`📊 Resultado registrado: ${correct ? '✅ ACERTO' : '❌ ERRO'} | Acurácia: ${AdaptiveAI.accuracy}%`);
+        }
+
+        // 3. MOTOR DE APRENDIZADO (Reforço)
+        function adaptWeights(decision, correct) {
+            const adjustmentFactor = correct ? 1 : -2;
+
+            // Ajustar pesos baseado no impacto de cada filtro
+            Object.keys(decision.filters).forEach(filterName => {
+                const filterValue = Math.abs(decision.filters[filterName]);
+                const impact = filterValue / 100; // Normalizar impacto
+
+                if (AdaptiveAI.weights[filterName]) {
+                    const adjustment = adjustmentFactor * impact * 0.5;
+                    AdaptiveAI.weights[filterName] += adjustment;
+
+                    // Aplicar limites de segurança
+                    AdaptiveAI.weights[filterName] = Math.max(5, Math.min(50, AdaptiveAI.weights[filterName]));
+                }
+            });
+
+            // Detecção de instabilidade
+            if (AdaptiveAI.accuracy < 40) {
+                console.warn('⚠️ Acurácia baixa detectada. Reduzindo pesos em 15%...');
+                Object.keys(AdaptiveAI.weights).forEach(key => {
+                    AdaptiveAI.weights[key] *= 0.85;
+                });
+            }
+
+            normalizeWeights();
+        }
+
+        // 4. NORMALIZAÇÃO DE PESOS
+        function normalizeWeights() {
+            const total = Object.values(AdaptiveAI.weights).reduce((a, b) => a + b, 0);
+            const targetTotal = 150; // Soma alvo dos pesos
+
+            Object.keys(AdaptiveAI.weights).forEach(key => {
+                AdaptiveAI.weights[key] = (AdaptiveAI.weights[key] / total) * targetTotal;
+            });
+        }
+
+        // 5. CALCULAR ACURÁCIA
+        function getAccuracy() {
+            const completed = AdaptiveAI.history.filter(d => d.status === 'completed');
+            if (completed.length === 0) return 0;
+
+            const correct = completed.filter(d => d.correct).length;
+            return Math.round((correct / completed.length) * 100);
+        }
+
+        // 6. RENDERIZAR DASHBOARD DE APRENDIZADO
+        function renderAdaptiveAIDashboard() {
+            const accuracy = getAccuracy();
+            const completedDecisions = AdaptiveAI.history.filter(d => d.status === 'completed');
+            const totalDecisions = completedDecisions.length;
+            
+            // Tradução dos nomes dos pesos
+            const weightTranslations = {
+                momentum: 'Momento',
+                reversal: 'Reversão',
+                statistical: 'Estatística',
+                pattern: 'Padrão',
+                special: 'Especial',
+                acceleration: 'Aceleração',
+                breakout: 'Rompimento',
+                cycles: 'Ciclos'
+            };
+
+            return `
+                <div class="rounded-2xl border p-6 bg-card shadow-glow mt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold">🤖 IA Adaptativa</h3>
+                        <span class="px-2 py-1 rounded-md bg-accent/10 text-accent text-[10px] font-bold uppercase tracking-wider">Motor Ativo</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="rounded-lg bg-secondary/50 p-3 border border-white/5">
+                            <p class="text-[10px] text-muted-foreground uppercase font-bold">Acurácia Global</p>
+                            <p class="text-2xl font-bold text-accent">${accuracy}%</p>
+                        </div>
+                        <div class="rounded-lg bg-secondary/50 p-3 border border-white/5">
+                            <p class="text-[10px] text-muted-foreground uppercase font-bold">Ciclos de Treino</p>
+                            <p class="text-2xl font-bold text-accent">${totalDecisions}</p>
+                        </div>
+                    </div>
+                    <div class="rounded-lg bg-secondary/30 p-4 border border-white/5">
+                        <p class="text-xs font-bold mb-3 text-muted-foreground uppercase tracking-tight">Pesos de Decisão (Ajuste Dinâmico):</p>
+                        <div class="space-y-3">
+                            ${Object.entries(AdaptiveAI.weights).map(([key, value]) => {
+                                const label = weightTranslations[key] || key;
+                                const percent = (value / 50) * 100; // 50 é o max weight definido no código
+                                return `
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between text-[10px] font-bold uppercase">
+                                            <span>${label}</span>
+                                            <span class="text-accent font-mono">${value.toFixed(1)}</span>
+                                        </div>
+                                        <div class="w-full bg-black/20 rounded-full h-1">
+                                            <div class="bg-accent h-1 rounded-full" style="width: ${Math.min(100, percent)}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <p class="mt-4 text-[10px] text-muted-foreground italic text-center">A IA aprende com cada novo dado inserido, ajustando os pesos para melhorar as previsões futuras.</p>
+                </div>
+            `;
+        }
+
+                // ============================================================================
+        // 💾 HISTÓRICO PERSISTENTE - LOCALSTORAGE
+        // ============================================================================
+        function saveHistory() {
+            try {
+                localStorage.setItem('wave_history', JSON.stringify(allTimes));
+                localStorage.setItem('wave_history_timestamp', new Date().toISOString());
+            } catch (e) {
+                console.warn('Erro ao salvar histórico:', e);
+            }
+        }
+
+        function loadHistory() {
+            try {
+                const saved = localStorage.getItem('wave_history');
+                if (saved) {
+                    allTimes = JSON.parse(saved);
+                    return true;
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar histórico:', e);
+            }
+            return false;
+        }
+
+        function getHistoryStatus() {
+            const saved = localStorage.getItem('wave_history');
+            const timestamp = localStorage.getItem('wave_history_timestamp');
+            
+            if (saved) {
+                const date = new Date(timestamp);
+                const timeAgo = Math.floor((Date.now() - date.getTime()) / 1000);
+                
+                if (timeAgo < 60) return '✅ Histórico carregado (agora)';
+                if (timeAgo < 3600) return `✅ Histórico carregado (há ${Math.floor(timeAgo / 60)}m)`;
+                if (timeAgo < 86400) return `✅ Histórico carregado (há ${Math.floor(timeAgo / 3600)}h)`;
+                return `✅ Histórico carregado (há ${Math.floor(timeAgo / 86400)}d)`;
+            }
+            return '📝 Novo início';
+        }
+
+        
+        // Configurações de Automação
+        let automationInterval = null;
+        let isAutomationRunning = false;
+        let lastProcessedTimestamp = null;
+
+        function getAutomationStatus() {
+            if (!isAutomationRunning) return '🔴 Automação Parada';
+            return '🟢 Automação Ativa (15s)';
+        }
+    
+        let allTimes = [];
+        function updateUI() {
+            loadAdaptiveWeights(); renderApp(allTimes, analyze(parseTimes(allTimes))); }
+        function addTimes(incoming) { allTimes = [...incoming, ...allTimes]; saveHistory(); updateUI(); }
+        function clearHistory() { allTimes = []; localStorage.removeItem('wave_history'); localStorage.removeItem('wave_history_timestamp'); updateUI(); }
+        function setupEventListeners() {
+            const uploadBtn = document.getElementById('upload-btn');
+            const fileInput = document.getElementById('file-input');
+            const dropZone = document.getElementById('drop-zone');
+            if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
+            if (fileInput) fileInput.addEventListener('change', (e) => { const file = e.target.files?.[0]; if (file) handleFile(file); e.currentTarget.value = ''; });
+            if (dropZone) { dropZone.addEventListener('dragover', (e) => e.preventDefault()); dropZone.addEventListener('drop', (e) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file) handleFile(file); }); }
+        }
+
+        async function handleFile(file) {
+            const uploadBtn = document.getElementById('upload-btn');
+            if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = 'Analisando...'; }
+            console.log("Arquivo selecionado:", file.name, file.type, file.size);
+            
+            try {
+                const reader = new FileReader();
+                reader.onerror = () => {
+                    console.error("Erro ao ler arquivo");
+                    showToast("Erro ao ler arquivo.", "error");
+                    if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = 'Selecionar imagem'; }
+                };
+                reader.onload = async (e) => {
+                    try {
+                        const imageData = e.target.result;
+                        const previewContainer = document.getElementById('preview-container');
+                        if (previewContainer) previewContainer.innerHTML = `<img src="${imageData}" class="max-h-48 rounded-lg border">`;
+                        
+                                                console.log("Iniciando processamento da imagem...");
+                        const timesWithColor = await processImageGrid(imageData);
+                        
+                        // Aplicar overlay visual de detecção OCR
+                        const worker = await Tesseract.createWorker('por');
+                        const { data: { words } } = await worker.recognize(imageData);
+                        await worker.terminate();
+                        applyOCROverlay(imageData, words);
+                        
+                        if (timesWithColor && timesWithColor.length) { 
+                            showToast(`${timesWithColor.length} eventos extraídos.`); 
+                            addTimes(timesWithColor); 
+                        } else {
+                            showToast('Nenhum dado encontrado na imagem.', 'warning');
+                        }
+                    } catch (innerError) {
+                        console.error("Erro interno no processamento:", innerError);
+                        showToast("Erro ao processar dados da imagem.", "error");
+                    } finally {
+                        if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = 'Selecionar imagem'; }
+                    }
+                };
+                reader.readAsDataURL(file);
+            } catch (error) { 
+                console.error("Erro fatal no handleFile:", error);
+                showToast('Erro crítico ao processar.', 'error'); 
+                if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = 'Selecionar imagem'; } 
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const toastContainer = document.createElement('div'); toastContainer.id = 'toast-container'; toastContainer.className = 'toast-container'; document.body.appendChild(toastContainer);
+            loadHistory();
+            updateUI();
+        });
+    </script>
+</body>
+</html>
