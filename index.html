@@ -2495,7 +2495,29 @@ document.addEventListener('DOMContentLoaded', initAdvancedChart);
         let allTimes = [];
         function updateUI() {
             loadAdaptiveWeights(); renderApp(allTimes, analyze(parseTimes(allTimes))); }
-        function addTimes(incoming) { allTimes = [...incoming, ...allTimes]; saveHistory(); updateUI(); }
+        let allTimes = [];
+        function updateUI() {
+            loadAdaptiveWeights(); renderApp(allTimes, analyze(parseTimes(allTimes))); }
+        
+        // FUNÇÃO CORRIGIDA PARA ACESSO GLOBAL
+        window.addTimes = function(incoming) { 
+            if (!Array.isArray(incoming)) incoming = [incoming];
+            
+            incoming.forEach(entry => {
+                const timeStr = entry.split('|')[0];
+                const existingIndex = allTimes.findIndex(t => t.startsWith(timeStr));
+                if (existingIndex === -1) {
+                    allTimes.push(entry);
+                } else if (allTimes[existingIndex].endsWith('|neutral') && !entry.endsWith('|neutral')) {
+                    allTimes[existingIndex] = entry;
+                }
+            });
+
+            allTimes.sort((a, b) => a.split('|')[0].localeCompare(b.split('|')[0]));
+            saveHistory(); 
+            updateUI(); 
+        };
+
         function clearHistory() { allTimes = []; localStorage.removeItem('wave_history'); localStorage.removeItem('wave_history_timestamp'); updateUI(); }
         function setupEventListeners() {
             const uploadBtn = document.getElementById('upload-btn');
@@ -2561,10 +2583,8 @@ document.addEventListener('DOMContentLoaded', initAdvancedChart);
         });
     </script>
 
-    <!-- 1º Carrega a lógica do gráfico -->
-    <script src="dashboard.js"></script>
-
-    <!-- 2º Carrega o receptor (ou o código que te passei antes) -->
+    <!-- CORREÇÃO NA CARGA DOS SCRIPTS NO FINAL DO BODY -->
+    <!-- Certifique-se de que o nome do arquivo aqui seja EXATAMENTE o que está no GitHub -->
     <script src="blaze_receiver_V2.js"></script>
 </body>
 </html>
