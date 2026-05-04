@@ -2494,10 +2494,9 @@ document.addEventListener('DOMContentLoaded', initAdvancedChart);
     
         let allTimes = [];
         function updateUI() {
-            loadAdaptiveWeights(); renderApp(allTimes, analyze(parseTimes(allTimes))); }
-        let allTimes = [];
-        function updateUI() {
-            loadAdaptiveWeights(); renderApp(allTimes, analyze(parseTimes(allTimes))); }
+            loadAdaptiveWeights(); 
+            renderApp(allTimes, analyze(parseTimes(allTimes))); 
+        }
         
         // FUNÇÃO CORRIGIDA PARA ACESSO GLOBAL
         window.addTimes = function(incoming) { 
@@ -2557,7 +2556,7 @@ document.addEventListener('DOMContentLoaded', initAdvancedChart);
                         
                         if (timesWithColor && timesWithColor.length) { 
                             showToast(`${timesWithColor.length} eventos extraídos.`); 
-                            addTimes(timesWithColor); 
+                            window.addTimes(timesWithColor); 
                         } else {
                             showToast('Nenhum dado encontrado na imagem.', 'warning');
                         }
